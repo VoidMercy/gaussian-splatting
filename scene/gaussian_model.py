@@ -20,6 +20,8 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
+from utils.bvh_utils import BVH
+import time
 
 class GaussianModel:
 
@@ -254,6 +256,55 @@ class GaussianModel:
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
 
         self.active_sh_degree = self.max_sh_degree
+
+        self.build_bvh()
+
+    def build_bvh(self):
+        print("Building BVH")
+        start_time = time.time()
+
+        P = self._xyz.shape[0]
+
+        # Construct bounding box for each point
+        # Covariance = R S S^T R^T
+        # Eigenvectors = R
+        # Eigenvalues = S S^T
+        eigenvalues = torch.square(self._scaling)
+
+        quaternions = self._rotation
+        r, i, j, k = torch.unbind(quaternions, -1)
+        two_s = 2.0 / (quaternions * quaternions).sum(-1)
+        eigenvectors = torch.stack(
+            (
+                1 - two_s * (j * j + k * k),
+                two_s * (i * j - k * r),
+                two_s * (i * k + j * r),
+                two_s * (i * j + k * r),
+                1 - two_s * (i * i + k * k),
+                two_s * (j * k - i * r),
+                two_s * (i * k - j * r),
+                two_s * (j * k + i * r),
+                1 - two_s * (i * i + j * j),
+            ),
+            -1,
+        )
+        eigenvectors = eigenvectors.reshape(quaternions.shape[:-1] + (3, 3))
+
+        # Construct axis-aligned bounding-box surrounding the three points:
+        # u + 3.0 * s1 * v1, u + 3.0 * s2 * v2, u + 3.0 * s3 * v3
+
+        axes = 3.0 * eigenvectors * eigenvalues.reshape(P, 1, 3)
+        axes = axes + self._xyz.reshape(P, 1, 3)
+
+        aabb_min, _ = torch.min(axes, axis=2)
+        aabb_max, _ = torch.max(axes, axis=2)
+        aabb = torch.stack((aabb_min, aabb_max), dim=2)
+
+        self._axes = axes
+        self._aabb = aabb
+
+        bvh = BVH(aabb.cpu().detach().numpy())
+        exit()
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
