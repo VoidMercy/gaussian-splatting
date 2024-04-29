@@ -269,7 +269,6 @@ class GaussianModel:
         # Covariance = R S S^T R^T
         # Eigenvectors = R
         # Eigenvalues = S S^T
-        eigenvalues = torch.square(self._scaling)
 
         quaternions = self._rotation
         r, i, j, k = torch.unbind(quaternions, -1)
@@ -293,7 +292,7 @@ class GaussianModel:
         # Construct axis-aligned bounding-box surrounding the three points:
         # u + 3.0 * s1 * v1, u + 3.0 * s2 * v2, u + 3.0 * s3 * v3
 
-        axes = 3.0 * eigenvectors * eigenvalues.reshape(P, 1, 3)
+        axes = 3.0 * eigenvectors * self._scaling.reshape(P, 1, 3)
         axes = axes + self._xyz.reshape(P, 1, 3)
 
         aabb_min, _ = torch.min(axes, axis=2)
@@ -304,7 +303,9 @@ class GaussianModel:
         self._aabb = aabb
 
         bvh = BVH(aabb.cpu().detach().numpy())
-        exit()
+
+        end_time = time.time()
+        print(f"BVH construction took {start_time - end_time} seconds")
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}

@@ -40,6 +40,9 @@ class BVHNode:
 		self.left = None
 		self.right = None
 
+	def range(self):
+		return self.bbox.max - self.bbox.min
+
 	def __str__(self):
 		return str((self.bbox, self.start, self.size, self.left, self.right))
 
@@ -75,8 +78,86 @@ class BVH:
 
 		root_bbox = BBox()
 		root_bbox.enclose_point(np.min(aabb[:, :, 0], axis=0))
-		root_bbox.enclose_point(np.max(aabb[:, :, 0], axis=0))
-		self.new_node(root_bbox, 0, self.primitives.shape[0])
+		root_bbox.enclose_point(np.max(aabb[:, :, 1], axis=0))
+		root_node_idx = self.new_node(root_bbox, 0, self.primitives.shape[0])
 
-		print(root_bbox)
-		print(self.bvh[0])
+		BUCKET_SIZE = 8
+		LEAF_NUM_PRIMITIVES = 1
+
+		stack = [root_node_idx]
+		while len(stack) > 0:
+			current_node_idx = stack.pop()
+			current_node = self.bvh[current_node_idx]
+			start_idx = current_node.start
+			end_idx = current_node.start + current_node.size
+
+			print(f"Current node with size {current_node.size}")
+
+			bbox_range = current_node.range()
+
+			least_cost = sys.float_info.max
+			best_axis = None
+			best_bucket = None
+			best_num_a = None
+			best_num_b = None
+			best_bbox_a = None
+			best_bbox_b = None
+			best_indices = None
+
+			# For each axis, try BUCKET_SIZE buckets, and choose the axis + bucket with least cost
+			primitive_bbs = self.aabb[self.primitives]
+			primitive_midpoints = (primitive_bbs[:, :, 0] + primitive_bbs[:, :, 1]) / 2
+			for axis in range(3):
+				if bbox_range[axis] == 0:
+					continue
+
+				# For each bucket, compute the split of primitives to left and right and compute cost
+				for bucket in np.arange(current_node.bbox.min[axis] + bbox_range[axis] / BUCKET_SIZE, current_node.bbox.max[axis], bbox_range[axis] / BUCKET_SIZE):
+					less_than_bucket = np.where(primitive_midpoints[start_idx:end_idx, axis] < bucket)[0] + start_idx
+					more_than_bucket = np.where(primitive_midpoints[start_idx:end_idx, axis] >= bucket)[0] + start_idx
+					num_a = less_than_bucket.shape[0]
+					num_b = more_than_bucket.shape[0]
+
+					if num_a >= 1 and num_b >= 1:
+						bbox_a_min = np.min(primitive_bbs[less_than_bucket][:, :, 0], axis=0)
+						bbox_a_max = np.max(primitive_bbs[less_than_bucket][:, :, 1], axis=0)
+						bbox_b_min = np.min(primitive_bbs[more_than_bucket][:, :, 0], axis=0)
+						bbox_b_max = np.max(primitive_bbs[more_than_bucket][:, :, 1], axis=0)
+
+						bbox_a = BBox()
+						bbox_b = BBox()
+						bbox_a.enclose_point(bbox_a_min)
+						bbox_a.enclose_point(bbox_a_max)
+						bbox_b.enclose_point(bbox_b_min)
+						bbox_b.enclose_point(bbox_b_max)
+
+						# Compute cost
+						sn = np.linalg.norm(current_node.bbox.max - current_node.bbox.min)**2
+						sa = np.linalg.norm(bbox_a.max - bbox_a.min)**2
+						sb = np.linalg.norm(bbox_b.max - bbox_b.min)**2
+						cost = 1.0 + sa / sn * num_a + sb / sn * num_b
+						if cost < least_cost:
+							least_cost = cost
+							best_axis = axis
+							best_bucket = bucket
+							best_num_a = num_a
+							best_num_b = num_b
+							best_bbox_a = bbox_a
+							best_bbox_b = bbox_b
+							best_indices = np.concatenate((less_than_bucket, more_than_bucket), axis=0)
+
+			if least_cost == sys.float_info.max:
+				# Didn't find any good splits, just don't split
+				continue
+
+			# Rearrange primitives array for this split
+			self.primitives[start_idx:end_idx] = best_indices
+
+			node_addr_l = self.new_node(best_bbox_a, current_node.start, best_num_a)
+			node_addr_r = self.new_node(best_bbox_b, current_node.start + best_num_a, best_num_b)
+
+			if best_num_b > LEAF_NUM_PRIMITIVES: stack.append(node_addr_r)
+			if best_num_a > LEAF_NUM_PRIMITIVES: stack.append(node_addr_l)
+
+		print("Done constructing BVH!")
+		print(f"Number of BVH nodes {len(self.bvh)}")
