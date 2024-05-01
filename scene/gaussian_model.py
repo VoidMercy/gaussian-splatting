@@ -22,6 +22,7 @@ from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 from utils.bvh_utils import BVH
 import time
+from torch.utils.cpp_extension import load
 
 class GaussianModel:
 
@@ -42,6 +43,8 @@ class GaussianModel:
 
         self.rotation_activation = torch.nn.functional.normalize
 
+        extra_opts = ["-O3", "--expt-extended-lambda"]
+        self.lbvh = load(name="lbvh", sources=["lbvh/main.cu"], extra_cuda_cflags=extra_opts)
 
     def __init__(self, sh_degree : int):
         self.active_sh_degree = 0
@@ -302,10 +305,16 @@ class GaussianModel:
         self._axes = axes
         self._aabb = aabb
 
-        bvh = BVH(aabb.cpu().detach().numpy())
+        nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
+        print(nodes.shape, node_aabbs.shape)
+        print(nodes)
+        print(node_aabbs)
+
+        self.bvh_nodes = nodes
+        self.bvh_aabbs = node_aabbs
 
         end_time = time.time()
-        print(f"BVH construction took {start_time - end_time} seconds")
+        print(f"BVH construction took {end_time - start_time} seconds")
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
