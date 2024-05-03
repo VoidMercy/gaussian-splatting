@@ -251,6 +251,15 @@ class GaussianModel:
         for idx, attr_name in enumerate(rot_names):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
+        # N = xyz.shape[0]
+        N = 100
+        xyz = xyz[:N]
+        features_dc = features_dc[:N]
+        opacities = opacities[:N]
+        features_extra = features_extra[:N]
+        scales = scales[:N]
+        rots = rots[:N]
+
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
         self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
@@ -292,26 +301,34 @@ class GaussianModel:
         )
         eigenvectors = eigenvectors.reshape(quaternions.shape[:-1] + (3, 3))
 
-        # Construct axis-aligned bounding-box surrounding the three points:
+        # Construct axis-aligned bounding-box surrounding the six points:
         # u + 3.0 * s1 * v1, u + 3.0 * s2 * v2, u + 3.0 * s3 * v3
+        # u - 3.0 * s1 * v1, u - 3.0 * s2 * v2, u - 3.0 * s3 * v3
 
-        axes = 3.0 * eigenvectors * self._scaling.reshape(P, 1, 3)
+        # scaling_max = torch.max(torch.exp(self._scaling), dim=1)[0]
+        # scaling_max = scaling_max.repeat(3, 1).t()
+        axes1 = 3.0 * eigenvectors * torch.exp(self._scaling).reshape(P, 1, 3)
+        axes2 = -3.0 * eigenvectors * torch.exp(self._scaling).reshape(P, 1, 3)
+        axes = torch.cat((axes1, axes2), dim=1)
         axes = axes + self._xyz.reshape(P, 1, 3)
 
-        aabb_min, _ = torch.min(axes, axis=2)
-        aabb_max, _ = torch.max(axes, axis=2)
+        aabb_min, _ = torch.min(axes, axis=1)
+        aabb_max, _ = torch.max(axes, axis=1)
         aabb = torch.stack((aabb_min, aabb_max), dim=2)
 
         self._axes = axes
         self._aabb = aabb
 
         nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
-        print(nodes.shape, node_aabbs.shape)
-        print(nodes)
-        print(node_aabbs)
 
-        self.bvh_nodes = nodes
-        self.bvh_aabbs = node_aabbs
+        self.bvh_nodes = nodes.to("cuda")
+        self.bvh_aabbs = node_aabbs.to("cuda")
+
+        print("XYZ", self._xyz)
+        print("AABB", self._aabb)
+        print("AXES1", axes1)
+        print("AXES2", axes2)
+        print("Scaling", self._scaling)
 
         end_time = time.time()
         print(f"BVH construction took {end_time - start_time} seconds")
