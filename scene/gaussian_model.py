@@ -309,13 +309,15 @@ class GaussianModel:
         aabb_max, _ = torch.max(axes, axis=1)
         aabb = torch.stack((aabb_min, aabb_max), dim=2)
 
-        self._axes = axes
-        self._aabb = aabb
+        self.axes = axes
 
-        nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
+        # nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
 
-        self.bvh_nodes = nodes.to("cuda")
-        self.bvh_aabbs = node_aabbs.to("cuda")
+        # self.bvh_nodes = nodes.to("cuda")
+        # self.bvh_aabbs = node_aabbs.to("cuda")
+        # self.radius = 3.0 * torch.max(torch.exp(self._scaling), dim=1)[0].to("cuda")
+        self.aabbs = aabb.cuda()
+        self.aabbs = torch.permute(self.aabbs, (0, 2, 1))
 
         end_time = time.time()
         print(f"BVH construction took {end_time - start_time} seconds")
