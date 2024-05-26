@@ -61,7 +61,7 @@ if __name__ == "__main__":
 	render_args = render_sets(model.extract(args), args.iteration, pipeline.extract(args))
 
 	# Number of gaussians vs runtime for all three methods.
-	if benchmark == 1:
+	if args.benchmark == 1:
 		gaussians = render_args[4]
 		P = gaussians._orig_xyz.shape[0]
 
