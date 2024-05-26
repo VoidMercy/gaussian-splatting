@@ -258,12 +258,40 @@ class GaussianModel:
         self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
 
+        self._orig_xyz = self._xyz
+        self._orig_features_dc = self._features_dc
+        self._orig_features_rest = self._features_rest
+        self._orig_opacity = self._opacity
+        self._orig_scaling = self._scaling
+        self._orig_rotation = self._rotation
+
         self.active_sh_degree = self.max_sh_degree
 
         self.build_bvh()
 
+    def set_n(self, n):
+        if n == self._xyz.shape[0]:
+            return
+        self._xyz.requires_grad_(False)
+        self._features_dc.requires_grad_(False)
+        self._features_rest.requires_grad_(False)
+        self._opacity.requires_grad_(False)
+        self._scaling.requires_grad_(False)
+        self._rotation.requires_grad_(False)
+        self._xyz = self._xyz.resize_(n, *self._xyz.shape[1:])
+        self._features_dc = self._features_dc.resize_(n, *self._features_dc.shape[1:])
+        self._features_rest = self._features_rest.resize_(n, *self._features_rest.shape[1:])
+        self._opacity = self._opacity.resize_(n, *self._opacity.shape[1:])
+        self._scaling = self._scaling.resize_(n, *self._scaling.shape[1:])
+        self._rotation = self._rotation.resize_(n, *self._rotation.shape[1:])
+        del self.bvh_nodes
+        del self.bvh_aabbs
+        del self.aabbs
+        del self.axes
+        torch.cuda.empty_cache()
+        self.build_bvh()
+
     def build_bvh(self):
-        print("Building BVH")
         start_time = time.time()
 
         P = self._xyz.shape[0]
@@ -311,10 +339,10 @@ class GaussianModel:
 
         self.axes = axes
 
-        # nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
+        nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
 
-        # self.bvh_nodes = nodes.to("cuda")
-        # self.bvh_aabbs = node_aabbs.to("cuda")
+        self.bvh_nodes = nodes.to("cuda")
+        self.bvh_aabbs = node_aabbs.to("cuda")
         # self.radius = 3.0 * torch.max(torch.exp(self._scaling), dim=1)[0].to("cuda")
         self.aabbs = aabb.cuda()
         self.aabbs = torch.permute(self.aabbs, (0, 2, 1))

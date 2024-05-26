@@ -15,7 +15,7 @@ from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianR
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, image_width=None, image_height=None, method=1):
     """
     Render the scene. 
     
@@ -33,9 +33,12 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
+    h = int(image_height) if image_height > 0 else int(viewpoint_camera.image_height)
+    w = int(image_width) if image_width > 0 else int(viewpoint_camera.image_width)
+
     raster_settings = GaussianRasterizationSettings(
-        image_height=int(viewpoint_camera.image_height),
-        image_width=int(viewpoint_camera.image_width),
+        image_height=h,
+        image_width=w,
         tanfovx=tanfovx,
         tanfovy=tanfovy,
         bg=bg_color,
@@ -48,7 +51,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
-        debug=pipe.debug
+        debug=pipe.debug,
+        method=method,
+        train=pipe.train
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -56,6 +61,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     means3D = pc.get_xyz
     means2D = screenspace_points
     opacity = pc.get_opacity
+    bvh_nodes = pc.bvh_nodes
+    bvh_aabbs = pc.bvh_aabbs
     aabbs = pc.aabbs
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
@@ -86,7 +93,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii = rasterizer(
+    rendered_image, radii, benchmark = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -95,6 +102,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         scales = scales,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp,
+        bvh_nodes = bvh_nodes,
+        bvh_aabbs = bvh_aabbs,
         aabbs = aabbs)
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
@@ -102,4 +111,5 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     return {"render": rendered_image,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
-            "radii": radii}
+            "radii": radii,
+            "benchmark": benchmark}
