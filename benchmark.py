@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
 		print(x)
 		print(times)
-	else:
+	elif args.benchmark == 2:
 		# Resolution (number of pixels) vs runtime for all three methods. Keep aspect ratio and scale
 		x = []
 		N_BINS = 25
@@ -112,6 +112,13 @@ if __name__ == "__main__":
 
 		print(x)
 		print(times)
+	else:
+		# Just singular runtime
+		times = [0, 0, 0]
+		for method in [1, 0, 2]:
+			t = render_set(*render_args, 0, 0, method)
+			times[method] = t
+		print("Times", times)
 	# plt.title("Runtime Performances over Number of Gaussians")
 	# plt.xlabel("Number of Gaussians")
 	# plt.ylabel("Runtime (s)")
