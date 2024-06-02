@@ -292,7 +292,7 @@ class GaussianModel:
         torch.cuda.empty_cache()
         self.build_bvh()
 
-    def build_bvh(self):
+    def build_bvh(self, verbose=True):
         start_time = time.time()
 
         P = self._xyz.shape[0]
@@ -349,7 +349,8 @@ class GaussianModel:
         self.aabbs = torch.permute(self.aabbs, (0, 2, 1))
 
         end_time = time.time()
-        print(f"BVH construction took {end_time - start_time} seconds")
+        if verbose:
+            print(f"BVH construction took {end_time - start_time} seconds")
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
