@@ -292,6 +292,12 @@ class GaussianModel:
         torch.cuda.empty_cache()
         self.build_bvh()
 
+    def build_bvh_(self, verbose=True):
+        self.bvh_nodes = torch.empty((0, 4), device="cuda", dtype=torch.int32)
+        self.bvh_aabbs = torch.empty((0, 3, 2), device="cuda", dtype=torch.float32)
+        self.aabbs = torch.empty((0, 2, 3), device="cuda", dtype=torch.float32)
+        return
+
     def build_bvh(self, verbose=True):
         start_time = time.time()
 
@@ -340,10 +346,12 @@ class GaussianModel:
 
         self.axes = axes
 
-        nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
+        # nodes, node_aabbs = self.lbvh.BuildBVH(aabb.cpu().detach())
 
-        self.bvh_nodes = nodes.to("cuda")
-        self.bvh_aabbs = node_aabbs.to("cuda")
+        # self.bvh_nodes = nodes.to("cuda")
+        # self.bvh_aabbs = node_aabbs.to("cuda")
+        self.bvh_nodes = torch.empty((0, 4), device="cuda", dtype=torch.int32)
+        self.bvh_aabbs = torch.empty((0, 3, 2), device="cuda", dtype=torch.float32)
         # self.radius = 3.0 * torch.max(torch.exp(self._scaling), dim=1)[0].to("cuda")
         self.aabbs = aabb.cuda()
         self.aabbs = torch.permute(self.aabbs, (0, 2, 1))
